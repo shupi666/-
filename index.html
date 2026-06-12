@@ -1,0 +1,1511 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>车内空气质量监测与报警系统</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            color: #fff;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            text-align: center;
+            padding: 25px 0;
+        }
+
+        header h1 {
+            font-size: 2rem;
+            background: linear-gradient(90deg, #00d4ff, #7b2cbf);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 10px;
+        }
+
+        .status-bar {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 15px;
+            margin-top: 12px;
+            font-size: 0.85rem;
+            color: #aaa;
+            flex-wrap: wrap;
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #ff4444;
+            animation: pulse 2s infinite;
+        }
+
+        .status-dot.connected {
+            background: #00ff88;
+        }
+
+        .status-dot.bluetooth {
+            background: #4facfe;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .mode-badge {
+            padding: 4px 12px;
+            border-radius: 15px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .mode-online {
+            background: rgba(0, 255, 136, 0.2);
+            color: #00ff88;
+        }
+
+        .mode-bluetooth {
+            background: rgba(79, 172, 254, 0.2);
+            color: #4facfe;
+        }
+
+        .mode-offline {
+            background: rgba(255, 68, 68, 0.2);
+            color: #ff6b6b;
+        }
+
+        .dashboard {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 18px;
+            padding: 18px 0;
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 18px;
+            padding: 22px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .card.alarm {
+            border-color: #ff4444;
+            box-shadow: 0 0 20px rgba(255, 68, 68, 0.3);
+            animation: alarm-pulse 1s infinite;
+        }
+
+        @keyframes alarm-pulse {
+            0%, 100% { box-shadow: 0 0 20px rgba(255, 68, 68, 0.3); }
+            50% { box-shadow: 0 0 30px rgba(255, 68, 68, 0.5); }
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .card-title {
+            font-size: 0.95rem;
+            color: #aaa;
+            font-weight: 500;
+        }
+
+        .card-icon {
+            width: 42px;
+            height: 42px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+        }
+
+        .card-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 5px;
+            background: linear-gradient(90deg, #fff, #ccc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .card.alarm .card-value {
+            background: linear-gradient(90deg, #ff6b6b, #ff4444);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .card-unit {
+            font-size: 0.9rem;
+            color: #888;
+            margin-left: 5px;
+        }
+
+        .card-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            font-size: 0.75rem;
+            color: #666;
+        }
+
+        .card-time {
+            color: #888;
+        }
+
+        .card-threshold {
+            color: #666;
+            font-size: 0.7rem;
+        }
+
+        .temp-icon { background: linear-gradient(135deg, #ff6b6b, #ee5a24); }
+        .humi-icon { background: linear-gradient(135deg, #4facfe, #00f2fe); }
+        .co2-icon { background: linear-gradient(135deg, #a8e063, #56ab2f); }
+        .ch2o-icon { background: linear-gradient(135deg, #f093fb, #f5576c); }
+        .tvoc-icon { background: linear-gradient(135deg, #667eea, #764ba2); }
+        .co-icon { background: linear-gradient(135deg, #ff9a9e, #fecfef); }
+        .dust-icon { background: linear-gradient(135deg, #c9d6ff, #e2e2e2); }
+        .sensor1-icon { background: linear-gradient(135deg, #f7971e, #ffd200); }
+        .sensor2-icon { background: linear-gradient(135deg, #11998e, #38ef7d); }
+
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            margin: 20px 0;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 10px 22px;
+            border: none;
+            border-radius: 22px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 600;
+        }
+
+        .btn-primary {
+            background: linear-gradient(90deg, #00d4ff, #7b2cbf);
+            color: #fff;
+        }
+
+        .btn-primary:hover {
+            transform: scale(1.05);
+            box-shadow: 0 10px 30px rgba(0, 212, 255, 0.3);
+        }
+
+        .btn-bluetooth {
+            background: linear-gradient(90deg, #4facfe, #00f2fe);
+            color: #fff;
+        }
+
+        .btn-bluetooth:hover {
+            transform: scale(1.05);
+            box-shadow: 0 10px 30px rgba(79, 172, 254, 0.3);
+        }
+
+        .btn-bluetooth.connected {
+            background: linear-gradient(90deg, #00ff88, #38ef7d);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 25px;
+        }
+
+        .loading.active {
+            display: block;
+        }
+
+        .spinner {
+            width: 35px;
+            height: 35px;
+            border: 3px solid rgba(255, 255, 255, 0.1);
+            border-top-color: #00d4ff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 12px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .error-message {
+            background: rgba(255, 68, 68, 0.1);
+            border: 1px solid rgba(255, 68, 68, 0.3);
+            border-radius: 10px;
+            padding: 12px;
+            margin: 12px 0;
+            text-align: center;
+            color: #ff6b6b;
+            display: none;
+        }
+
+        .error-message.active {
+            display: block;
+        }
+
+        .auto-refresh {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #888;
+            font-size: 0.85rem;
+        }
+
+        .auto-refresh select {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            padding: 5px 8px;
+            color: #fff;
+            cursor: pointer;
+        }
+
+        .auto-refresh select option {
+            background: #1a1a2e;
+        }
+
+        .chart-section {
+            margin-top: 25px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 18px;
+            padding: 22px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .chart-title {
+            font-size: 1.1rem;
+            margin-bottom: 15px;
+            color: #aaa;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 300px;
+            margin-bottom: 20px;
+        }
+
+        .chart-tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+
+        .chart-tab {
+            padding: 8px 16px;
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            border-radius: 20px;
+            color: #aaa;
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: all 0.3s ease;
+        }
+
+        .chart-tab:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .chart-tab.active {
+            background: linear-gradient(90deg, #00d4ff, #7b2cbf);
+            color: #fff;
+        }
+
+        .alarm-section {
+            margin-top: 25px;
+            background: rgba(255, 68, 68, 0.1);
+            border: 1px solid rgba(255, 68, 68, 0.3);
+            border-radius: 18px;
+            padding: 22px;
+        }
+
+        .alarm-title {
+            font-size: 1.1rem;
+            margin-bottom: 12px;
+            color: #ff6b6b;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .alarm-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .alarm-item {
+            display: flex;
+            flex-direction: column;
+            padding: 12px;
+            margin-bottom: 10px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 10px;
+            border-left: 3px solid #ff4444;
+        }
+
+        .alarm-time {
+            color: #ff6b6b;
+            font-size: 0.85rem;
+            margin-bottom: 5px;
+        }
+
+        .alarm-content {
+            color: #fff;
+            font-size: 0.9rem;
+        }
+
+        .alarm-source {
+            color: #666;
+            font-size: 0.75rem;
+            margin-top: 5px;
+        }
+
+        .no-alarm {
+            color: #666;
+            text-align: center;
+            padding: 30px;
+        }
+
+        .clear-btn {
+            margin-top: 12px;
+            padding: 6px 18px;
+            background: rgba(255, 68, 68, 0.2);
+            border: none;
+            border-radius: 18px;
+            color: #ff6b6b;
+            cursor: pointer;
+            font-size: 0.8rem;
+        }
+
+        .bluetooth-panel {
+            background: rgba(79, 172, 254, 0.1);
+            border: 1px solid rgba(79, 172, 254, 0.3);
+            border-radius: 12px;
+            padding: 15px;
+            margin: 15px 0;
+            display: none;
+        }
+
+        .bluetooth-panel.active {
+            display: block;
+        }
+
+        .bluetooth-panel h3 {
+            color: #4facfe;
+            margin-bottom: 10px;
+            font-size: 1rem;
+        }
+
+        .bluetooth-info {
+            font-size: 0.85rem;
+            color: #aaa;
+        }
+
+        .bluetooth-info p {
+            margin: 5px 0;
+        }
+
+        .bluetooth-raw {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            padding: 10px;
+            margin-top: 10px;
+            font-family: monospace;
+            font-size: 0.8rem;
+            color: #4facfe;
+            word-break: break-all;
+        }
+
+        .bluetooth-saved {
+            margin-top: 10px;
+            padding: 10px;
+            background: rgba(0, 255, 136, 0.1);
+            border-radius: 8px;
+            font-size: 0.8rem;
+        }
+
+        .bluetooth-saved .label {
+            color: #888;
+        }
+
+        .bluetooth-saved .device-name {
+            color: #00ff88;
+            font-weight: 600;
+        }
+
+        .forget-btn {
+            margin-left: 10px;
+            padding: 3px 10px;
+            background: rgba(255, 68, 68, 0.2);
+            border: none;
+            border-radius: 10px;
+            color: #ff6b6b;
+            cursor: pointer;
+            font-size: 0.75rem;
+        }
+
+        .threshold-config {
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 12px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+
+        .threshold-config h3 {
+            color: #aaa;
+            font-size: 0.9rem;
+            margin-bottom: 10px;
+        }
+
+        .threshold-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+        }
+
+        .threshold-item {
+            background: rgba(0, 0, 0, 0.2);
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 0.8rem;
+        }
+
+        .threshold-item .label {
+            color: #888;
+        }
+
+        .threshold-item .value {
+            color: #ff6b6b;
+            font-weight: 600;
+        }
+
+        .device-list {
+            margin-top: 15px;
+        }
+
+        .device-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 15px;
+            margin-bottom: 8px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .device-item:hover {
+            background: rgba(79, 172, 254, 0.2);
+        }
+
+        .device-item.selected {
+            background: rgba(79, 172, 254, 0.3);
+            border: 1px solid #4facfe;
+        }
+
+        .device-name-text {
+            color: #fff;
+            font-weight: 500;
+        }
+
+        .device-id {
+            color: #666;
+            font-size: 0.75rem;
+        }
+
+        @media (max-width: 600px) {
+            header h1 {
+                font-size: 1.5rem;
+            }
+
+            .card-value {
+                font-size: 2rem;
+            }
+
+            .controls {
+                flex-direction: column;
+                align-items: center;
+            }
+
+            .btn {
+                width: 100%;
+                max-width: 200px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>车内空气质量监测与报警系统</h1>
+            <h2 style="font-size: 1.3rem; background: linear-gradient(90deg, #00d4ff, #7b2cbf); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; font-weight: 400; margin-top: 5px;">OneNet 环境监测</h2>
+            <div class="status-bar">
+                <div class="status-indicator">
+                    <div class="status-dot" id="statusDot"></div>
+                    <span id="statusText">未连接</span>
+                </div>
+                <span class="mode-badge mode-offline" id="modeBadge">离线</span>
+                <div class="auto-refresh">
+                    <label for="refreshInterval">刷新:</label>
+                    <select id="refreshInterval">
+                        <option value="0">关闭</option>
+                        <option value="5">5秒</option>
+                        <option value="10" selected>10秒</option>
+                        <option value="30">30秒</option>
+                    </select>
+                </div>
+            </div>
+        </header>
+
+        <div class="error-message" id="errorMessage"></div>
+
+        <div class="threshold-config">
+            <h3>⚠️ 报警阈值设置</h3>
+            <div class="threshold-grid">
+                <div class="threshold-item">
+                    <span class="label">温度上限:</span>
+                    <span class="value">> 45°C</span>
+                </div>
+                <div class="threshold-item">
+                    <span class="label">CO2上限:</span>
+                    <span class="value">> 1500ppm</span>
+                </div>
+                <div class="threshold-item">
+                    <span class="label">甲醛上限:</span>
+                    <span class="value">> 0.1mg/m³</span>
+                </div>
+                <div class="threshold-item">
+                    <span class="label">TVOC上限:</span>
+                    <span class="value">> 0.5mg/m³</span>
+                </div>
+                <div class="threshold-item">
+                    <span class="label">一氧化碳上限:</span>
+                    <span class="value">> 50ppm</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="bluetooth-panel" id="bluetoothPanel">
+            <h3>🔵 蓝牙连接</h3>
+            <div class="bluetooth-info">
+                <p>设备名称: <span id="btDeviceName">--</span></p>
+                <p>连接状态: <span id="btConnectionStatus">--</span></p>
+            </div>
+            <div id="savedDeviceInfo" class="bluetooth-saved" style="display:none;">
+                <span class="label">已记住设备:</span>
+                <span class="device-name" id="savedDeviceName"></span>
+                <button class="forget-btn" onclick="forgetDevice()">忘记</button>
+            </div>
+            <div class="bluetooth-raw" id="btRawData">等待数据...</div>
+        </div>
+
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p id="loadingText">正在获取数据...</p>
+        </div>
+
+        <div class="dashboard" id="dashboard">
+            <div class="card" id="tempCard">
+                <div class="card-header">
+                    <span class="card-title">温度</span>
+                    <div class="card-icon temp-icon">🌡️</div>
+                </div>
+                <div class="card-value"><span id="tempValue">--</span><span class="card-unit">°C</span></div>
+                <div class="card-footer">
+                    <span class="card-threshold">阈值: >45°C</span>
+                    <span class="card-time" id="tempTime">--</span>
+                </div>
+            </div>
+
+            <div class="card" id="humiCard">
+                <div class="card-header">
+                    <span class="card-title">湿度</span>
+                    <div class="card-icon humi-icon">💧</div>
+                </div>
+                <div class="card-value"><span id="humiValue">--</span><span class="card-unit">%</span></div>
+                <div class="card-footer">
+                    <span class="card-threshold">无阈值</span>
+                    <span class="card-time" id="humiTime">--</span>
+                </div>
+            </div>
+
+            <div class="card" id="co2Card">
+                <div class="card-header">
+                    <span class="card-title">二氧化碳</span>
+                    <div class="card-icon co2-icon">🌿</div>
+                </div>
+                <div class="card-value"><span id="co2Value">--</span><span class="card-unit">ppm</span></div>
+                <div class="card-footer">
+                    <span class="card-threshold">阈值: >1500ppm</span>
+                    <span class="card-time" id="co2Time">--</span>
+                </div>
+            </div>
+
+            <div class="card" id="ch2oCard">
+                <div class="card-header">
+                    <span class="card-title">甲醛</span>
+                    <div class="card-icon ch2o-icon">⚗️</div>
+                </div>
+                <div class="card-value"><span id="ch2oValue">--</span><span class="card-unit">mg/m³</span></div>
+                <div class="card-footer">
+                    <span class="card-threshold">阈值: >0.1mg/m³</span>
+                    <span class="card-time" id="ch2oTime">--</span>
+                </div>
+            </div>
+
+            <div class="card" id="tvocCard">
+                <div class="card-header">
+                    <span class="card-title">有害气体 (TVOC)</span>
+                    <div class="card-icon tvoc-icon">☁️</div>
+                </div>
+                <div class="card-value"><span id="tvocValue">--</span><span class="card-unit">mg/m³</span></div>
+                <div class="card-footer">
+                    <span class="card-threshold">阈值: >0.5mg/m³</span>
+                    <span class="card-time" id="tvocTime">--</span>
+                </div>
+            </div>
+
+            <div class="card" id="coCard">
+                <div class="card-header">
+                    <span class="card-title">一氧化碳 (CO)</span>
+                    <div class="card-icon co-icon">💨</div>
+                </div>
+                <div class="card-value"><span id="coValue">--</span><span class="card-unit">ppm</span></div>
+                <div class="card-footer">
+                    <span class="card-threshold">阈值: >50ppm</span>
+                    <span class="card-time" id="coTime">--</span>
+                </div>
+            </div>
+
+            <div class="card" id="dustCard">
+                <div class="card-header">
+                    <span class="card-title">粉尘 (PM2.5)</span>
+                    <div class="card-icon dust-icon">🌫️</div>
+                </div>
+                <div class="card-value"><span id="dustValue">--</span><span class="card-unit">mg/m³</span></div>
+                <div class="card-footer">
+                    <span class="card-threshold">无阈值</span>
+                    <span class="card-time" id="dustTime">--</span>
+                </div>
+            </div>
+
+            <div class="card" id="sensor1Card" style="display:none;">
+                <div class="card-header">
+                    <span class="card-title">传感器6</span>
+                    <div class="card-icon sensor1-icon">📊</div>
+                </div>
+                <div class="card-value"><span id="sensor1Value">--</span><span class="card-unit" id="sensor1Unit"></span></div>
+                <div class="card-footer">
+                    <span class="card-time" id="sensor1Time">--</span>
+                </div>
+            </div>
+
+            <div class="card" id="sensor2Card" style="display:none;">
+                <div class="card-header">
+                    <span class="card-title">传感器7</span>
+                    <div class="card-icon sensor2-icon">📊</div>
+                </div>
+                <div class="card-value"><span id="sensor2Value">--</span><span class="card-unit" id="sensor2Unit"></span></div>
+                <div class="card-footer">
+                    <span class="card-time" id="sensor2Time">--</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="controls">
+            <button class="btn btn-primary" onclick="fetchOnlineData()">🔄 刷新数据</button>
+            <button class="btn btn-bluetooth" id="bluetoothBtn" onclick="toggleBluetooth()">🔵 连接蓝牙（本地连接）</button>
+            <button class="btn btn-secondary" onclick="toggleAutoRefresh()">⏸️ 暂停刷新</button>
+        </div>
+
+        <div class="chart-section">
+            <div class="chart-title">📈 实时趋势分析</div>
+            <div class="chart-tabs">
+                <button class="chart-tab active" onclick="switchChart('temp')">🌡️ 温度</button>
+                <button class="chart-tab" onclick="switchChart('humi')">💧 湿度</button>
+                <button class="chart-tab" onclick="switchChart('co2')">🌿 CO2</button>
+                <button class="chart-tab" onclick="switchChart('ch2o')">⚗️ 甲醛</button>
+                <button class="chart-tab" onclick="switchChart('tvoc')">☁️ TVOC</button>
+                <button class="chart-tab" onclick="switchChart('co')">💨 CO</button>
+                <button class="chart-tab" onclick="switchChart('dust')">🌫️ 粉尘</button>
+            </div>
+            <div class="chart-container">
+                <canvas id="trendChart"></canvas>
+            </div>
+        </div>
+
+        <div class="alarm-section">
+            <div class="alarm-title">🚨 报警记录</div>
+            <div class="alarm-list" id="alarmList">
+                <div class="no-alarm">暂无报警记录</div>
+            </div>
+            <button class="clear-btn" onclick="clearAlarms()">清空报警记录</button>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'http://iot-api.heclouds.com/thingmodel/query-device-property?product_id=WhrJY4b12S&device_name=air1';
+        const AUTH_TOKEN = 'version=2018-10-31&res=userid%2F492027&et=1895229116&method=md5&sign=D6ValeRWSYKEPGXWwdg5Zg%3D%3D';
+
+        const BLE_SERVICE_UUID = '0000ffe0-0000-1000-8000-00805f9b34fb';
+        const BLE_CHAR_UUID = '0000ffe1-0000-1000-8000-00805f9b34fb';
+
+        const THRESHOLDS = {
+            'T': { max: 45, unit: '°C', name: '温度' },
+            'C': { max: 1500, unit: 'ppm', name: '二氧化碳' },
+            'F': { max: 0.1, unit: 'mg/m³', name: '甲醛' },
+            'V': { max: 0.5, unit: 'mg/m³', name: '有害气体' },
+            'O': { max: 50, unit: 'ppm', name: '一氧化碳' }
+        };
+
+        let refreshTimer = null;
+        let isAutoRefreshPaused = false;
+        let alarms = JSON.parse(localStorage.getItem('sensorAlarms') || '[]');
+        let bluetoothDevice = null;
+        let bluetoothCharacteristic = null;
+        let isConnected = false;
+        let connectionMode = 'offline';
+        let dataBuffer = '';
+        let lastAlarmState = {};
+        let savedBluetoothDevice = JSON.parse(localStorage.getItem('savedBluetoothDevice') || 'null');
+
+        const sensorMap = {
+            'T': { id: 'temp', name: '温度' },
+            'H': { id: 'humi', name: '湿度' },
+            'C': { id: 'co2', name: '二氧化碳' },
+            'F': { id: 'ch2o', name: '甲醛' },
+            'V': { id: 'tvoc', name: '有害气体' },
+            'O': { id: 'co', name: '一氧化碳' },
+            'D': { id: 'dust', name: '粉尘' },
+            'X': { id: 'sensor1', name: '传感器6' },
+            'Y': { id: 'sensor2', name: '传感器7' }
+        };
+
+        const chartConfig = {
+            'temp': { label: '温度', unit: '°C', color: '#ff6b6b', borderColor: '#ff6b6b' },
+            'humi': { label: '湿度', unit: '%', color: '#4facfe', borderColor: '#4facfe' },
+            'co2': { label: 'CO2', unit: 'ppm', color: '#a8e063', borderColor: '#a8e063' },
+            'ch2o': { label: '甲醛', unit: 'mg/m³', color: '#f093fb', borderColor: '#f093fb' },
+            'tvoc': { label: 'TVOC', unit: 'mg/m³', color: '#667eea', borderColor: '#667eea' },
+            'co': { label: 'CO', unit: 'ppm', color: '#ff9a9e', borderColor: '#ff9a9e' },
+            'dust': { label: '粉尘', unit: 'mg/m³', color: '#c9d6ff', borderColor: '#c9d6ff' }
+        };
+
+        let trendChart = null;
+        let currentChartSensor = 'temp';
+        let chartData = {
+            'temp': [],
+            'humi': [],
+            'co2': [],
+            'ch2o': [],
+            'tvoc': [],
+            'co': [],
+            'dust': []
+        };
+        const MAX_CHART_POINTS = 30;
+
+        function initChart() {
+            const ctx = document.getElementById('trendChart').getContext('2d');
+            const config = chartConfig[currentChartSensor];
+            
+            trendChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: `${config.label} (${config.unit})`,
+                        data: [],
+                        borderColor: config.borderColor,
+                        backgroundColor: config.color + '33',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.4,
+                        pointRadius: 3,
+                        pointBackgroundColor: config.borderColor
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            labels: {
+                                color: '#aaa'
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            display: true,
+                            grid: {
+                                color: 'rgba(255, 255, 255, 0.1)'
+                            },
+                            ticks: {
+                                color: '#888',
+                                maxRotation: 0,
+                                maxTicksLimit: 6
+                            }
+                        },
+                        y: {
+                            display: true,
+                            grid: {
+                                color: 'rgba(255, 255, 255, 0.1)'
+                            },
+                            ticks: {
+                                color: '#888'
+                            }
+                        }
+                    },
+                    animation: {
+                        duration: 300
+                    }
+                }
+            });
+        }
+
+        function switchChart(sensorId) {
+            currentChartSensor = sensorId;
+            
+            document.querySelectorAll('.chart-tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            event.target.classList.add('active');
+            
+            const config = chartConfig[sensorId];
+            trendChart.data.datasets[0].label = `${config.label} (${config.unit})`;
+            trendChart.data.datasets[0].borderColor = config.borderColor;
+            trendChart.data.datasets[0].backgroundColor = config.color + '33';
+            trendChart.data.datasets[0].pointBackgroundColor = config.borderColor;
+            
+            updateChartData();
+        }
+
+        function addChartData(sensorId, value) {
+            if (!chartData[sensorId]) return;
+            
+            const now = new Date();
+            const timeLabel = now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            
+            chartData[sensorId].push({
+                time: timeLabel,
+                value: parseFloat(value)
+            });
+            
+            if (chartData[sensorId].length > MAX_CHART_POINTS) {
+                chartData[sensorId].shift();
+            }
+            
+            if (sensorId === currentChartSensor) {
+                updateChartData();
+            }
+        }
+
+        function updateChartData() {
+            const data = chartData[currentChartSensor];
+            trendChart.data.labels = data.map(d => d.time);
+            trendChart.data.datasets[0].data = data.map(d => d.value);
+            trendChart.update('none');
+        }
+
+        function formatTime(timestamp) {
+            if (!timestamp) return '--';
+            const date = new Date(timestamp);
+            return date.toLocaleString('zh-CN', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+        }
+
+        function setStatus(connected, mode = 'online') {
+            const dot = document.getElementById('statusDot');
+            const text = document.getElementById('statusText');
+            const badge = document.getElementById('modeBadge');
+            
+            dot.classList.remove('connected', 'bluetooth');
+            badge.classList.remove('mode-online', 'mode-bluetooth', 'mode-offline');
+            
+            if (connected) {
+                dot.classList.add('connected');
+                if (mode === 'bluetooth') {
+                    dot.classList.add('bluetooth');
+                    text.textContent = '蓝牙已连接';
+                    badge.textContent = '蓝牙模式';
+                    badge.classList.add('mode-bluetooth');
+                } else {
+                    text.textContent = '已连接';
+                    badge.textContent = '在线模式';
+                    badge.classList.add('mode-online');
+                }
+                connectionMode = mode;
+            } else {
+                text.textContent = '未连接';
+                badge.textContent = '离线';
+                badge.classList.add('mode-offline');
+                connectionMode = 'offline';
+            }
+        }
+
+        function showError(message) {
+            const errorEl = document.getElementById('errorMessage');
+            errorEl.textContent = message;
+            errorEl.classList.add('active');
+            setTimeout(() => errorEl.classList.remove('active'), 5000);
+        }
+
+        function updateSensorValue(key, value) {
+            const sensor = sensorMap[key];
+            if (!sensor) return;
+            
+            const valueEl = document.getElementById(`${sensor.id}Value`);
+            const timeEl = document.getElementById(`${sensor.id}Time`);
+            const cardEl = document.getElementById(`${sensor.id}Card`);
+            
+            if (valueEl) valueEl.textContent = value;
+            if (timeEl) timeEl.textContent = formatTime(Date.now());
+            if (cardEl && (key === 'X' || key === 'Y')) {
+                cardEl.style.display = 'block';
+            }
+            
+            addChartData(sensor.id, value);
+        }
+
+        function checkAlarm(key, value, source) {
+            const threshold = THRESHOLDS[key];
+            if (!threshold) return false;
+            
+            const numValue = parseFloat(value);
+            const cardEl = document.getElementById(`${sensorMap[key].id}Card`);
+            
+            if (numValue > threshold.max) {
+                if (cardEl) cardEl.classList.add('alarm');
+                
+                if (!lastAlarmState[key] || Date.now() - lastAlarmState[key] > 60000) {
+                    lastAlarmState[key] = Date.now();
+                    
+                    const alarm = {
+                        time: Date.now(),
+                        source: source,
+                        sensor: threshold.name,
+                        value: value,
+                        unit: threshold.unit,
+                        threshold: threshold.max,
+                        message: `${threshold.name}超标: ${value}${threshold.unit} (阈值: ${threshold.max}${threshold.unit})`
+                    };
+                    
+                    alarms.unshift(alarm);
+                    if (alarms.length > 50) alarms.pop();
+                    localStorage.setItem('sensorAlarms', JSON.stringify(alarms));
+                    renderAlarms();
+                    
+                    if (Notification.permission === 'granted') {
+                        new Notification('环境监测报警', { body: alarm.message });
+                    }
+                }
+                return true;
+            } else {
+                if (cardEl) cardEl.classList.remove('alarm');
+                return false;
+            }
+        }
+
+        function parseBluetoothData(dataString) {
+            const rawDataEl = document.getElementById('btRawData');
+            if (rawDataEl) rawDataEl.textContent = dataString;
+            
+            const parsed = {};
+            const regex = /([A-Z])(-?\d+\.?\d*)/g;
+            let match;
+            
+            while ((match = regex.exec(dataString)) !== null) {
+                const key = match[1];
+                const value = match[2];
+                parsed[key] = value;
+                updateSensorValue(key, value);
+                checkAlarm(key, value, 'bluetooth');
+            }
+            
+            if (Object.keys(parsed).length > 0) {
+                setStatus(true, 'bluetooth');
+            }
+        }
+
+        function processOnlineData(data) {
+            data.forEach(item => {
+                const identifier = item.identifier.toLowerCase();
+                const valueEl = document.getElementById(`${identifier}Value`);
+                const timeEl = document.getElementById(`${identifier}Time`);
+
+                if (valueEl) {
+                    valueEl.textContent = item.value;
+                }
+                if (timeEl) {
+                    timeEl.textContent = formatTime(item.time);
+                }
+                
+                addChartData(identifier, item.value);
+                
+                const keyMap = {
+                    'temp': 'T',
+                    'humi': 'H',
+                    'co2': 'C',
+                    'ch2o': 'F',
+                    'tvoc': 'V',
+                    'co': 'O',
+                    'dust': 'D'
+                };
+                
+                if (keyMap[identifier]) {
+                    checkAlarm(keyMap[identifier], item.value, 'online');
+                }
+            });
+        }
+
+        function renderAlarms() {
+            const list = document.getElementById('alarmList');
+            if (alarms.length === 0) {
+                list.innerHTML = '<div class="no-alarm">暂无报警记录</div>';
+                return;
+            }
+            
+            list.innerHTML = alarms.slice(0, 20).map(alarm => {
+                const sourceIcon = alarm.source === 'bluetooth' ? '🔵' : '🌐';
+                return `
+                <div class="alarm-item">
+                    <div class="alarm-time">⏰ ${formatTime(alarm.time)}</div>
+                    <div class="alarm-content">⚠️ ${alarm.message}</div>
+                    <div class="alarm-source">${sourceIcon} 数据来源: ${alarm.source === 'bluetooth' ? '蓝牙' : '网络'}</div>
+                </div>
+            `}).join('');
+        }
+
+        function clearAlarms() {
+            alarms = [];
+            localStorage.removeItem('sensorAlarms');
+            renderAlarms();
+        }
+
+        async function fetchOnlineData() {
+            if (connectionMode === 'bluetooth') {
+                return;
+            }
+            
+            const loading = document.getElementById('loading');
+            const loadingText = document.getElementById('loadingText');
+            const dashboard = document.getElementById('dashboard');
+
+            loadingText.textContent = '正在获取网络数据...';
+            loading.classList.add('active');
+            dashboard.style.opacity = '0.5';
+
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'GET',
+                    headers: {
+                        'authorization': AUTH_TOKEN
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const result = await response.json();
+
+                if (result.code === 0 && result.data) {
+                    processOnlineData(result.data);
+                    setStatus(true, 'online');
+                } else {
+                    throw new Error(result.msg || '获取数据失败');
+                }
+            } catch (error) {
+                console.error('Error fetching data:', error);
+                showError(`网络获取失败: ${error.message}`);
+                setStatus(false);
+            } finally {
+                loading.classList.remove('active');
+                dashboard.style.opacity = '1';
+            }
+        }
+
+        function updateSavedDeviceUI() {
+            const savedDiv = document.getElementById('savedDeviceInfo');
+            const savedName = document.getElementById('savedDeviceName');
+            
+            if (savedBluetoothDevice) {
+                savedDiv.style.display = 'block';
+                savedName.textContent = savedBluetoothDevice.name;
+            } else {
+                savedDiv.style.display = 'none';
+            }
+        }
+
+        function forgetDevice() {
+            savedBluetoothDevice = null;
+            localStorage.removeItem('savedBluetoothDevice');
+            updateSavedDeviceUI();
+            showError('已忘记蓝牙设备');
+        }
+
+        async function toggleBluetooth() {
+            const btn = document.getElementById('bluetoothBtn');
+            const panel = document.getElementById('bluetoothPanel');
+            
+            if (bluetoothDevice && isConnected) {
+                disconnectBluetooth();
+                return;
+            }
+            
+            if (!navigator.bluetooth) {
+                showError('您的浏览器不支持蓝牙功能，请使用Chrome或Edge浏览器');
+                return;
+            }
+            
+            panel.classList.add('active');
+            btn.disabled = true;
+            btn.textContent = '🔍 搜索设备...';
+            document.getElementById('btConnectionStatus').textContent = '搜索中...';
+            
+            try {
+                const options = {
+                    acceptAllDevices: true,
+                    optionalServices: [BLE_SERVICE_UUID]
+                };
+                
+                if (savedBluetoothDevice) {
+                    options.filters = [{
+                        name: savedBluetoothDevice.name
+                    }];
+                }
+                
+                bluetoothDevice = await navigator.bluetooth.requestDevice(options);
+                
+                savedBluetoothDevice = {
+                    id: bluetoothDevice.id,
+                    name: bluetoothDevice.name
+                };
+                localStorage.setItem('savedBluetoothDevice', JSON.stringify(savedBluetoothDevice));
+                updateSavedDeviceUI();
+                reconnectAttempts = 0;
+                
+                document.getElementById('btDeviceName').textContent = bluetoothDevice.name || '未知设备';
+                
+                bluetoothDevice.addEventListener('gattserverdisconnected', onDisconnected);
+                
+                await connectBluetooth();
+                
+            } catch (error) {
+                console.error('Bluetooth error:', error);
+                if (error.name === 'NotFoundError') {
+                    showError('未选择设备或未找到蓝牙设备');
+                } else {
+                    showError(`蓝牙错误: ${error.message}`);
+                }
+                btn.disabled = false;
+                btn.textContent = '🔵 连接蓝牙';
+                document.getElementById('btConnectionStatus').textContent = '未连接';
+            }
+        }
+
+        async function connectBluetooth() {
+            const btn = document.getElementById('bluetoothBtn');
+            
+            try {
+                btn.textContent = '🔗 连接中...';
+                document.getElementById('btConnectionStatus').textContent = '连接中...';
+                
+                const server = await bluetoothDevice.gatt.connect();
+                const service = await server.getPrimaryService(BLE_SERVICE_UUID);
+                bluetoothCharacteristic = await service.getCharacteristic(BLE_CHAR_UUID);
+                
+                await bluetoothCharacteristic.startNotifications();
+                bluetoothCharacteristic.addEventListener('characteristicvaluechanged', handleBluetoothData);
+                
+                isConnected = true;
+                btn.disabled = false;
+                btn.textContent = '🔵 断开蓝牙';
+                btn.classList.add('connected');
+                
+                document.getElementById('btConnectionStatus').textContent = '已连接';
+                setStatus(true, 'bluetooth');
+                
+                if (refreshTimer) {
+                    clearInterval(refreshTimer);
+                    refreshTimer = null;
+                }
+                
+                return true;
+                
+            } catch (error) {
+                console.error('Connect error:', error);
+                isConnected = false;
+                throw error;
+            }
+        }
+
+        let reconnectAttempts = 0;
+        const MAX_RECONNECT_ATTEMPTS = 3;
+
+        async function autoReconnect() {
+            if (!savedBluetoothDevice || !navigator.bluetooth) {
+                return;
+            }
+            
+            if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+                console.log('Max reconnect attempts reached, clearing saved device');
+                showError('自动重连失败，请重新连接蓝牙');
+                savedBluetoothDevice = null;
+                localStorage.removeItem('savedBluetoothDevice');
+                updateSavedDeviceUI();
+                reconnectAttempts = 0;
+                
+                const btn = document.getElementById('bluetoothBtn');
+                btn.disabled = false;
+                btn.textContent = '🔵 连接蓝牙';
+                document.getElementById('btConnectionStatus').textContent = '请点击连接蓝牙';
+                return;
+            }
+            
+            const btn = document.getElementById('bluetoothBtn');
+            const panel = document.getElementById('bluetoothPanel');
+            
+            panel.classList.add('active');
+            btn.disabled = true;
+            reconnectAttempts++;
+            btn.textContent = `🔄 自动重连中(${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`;
+            document.getElementById('btConnectionStatus').textContent = '自动重连中...';
+            document.getElementById('btDeviceName').textContent = savedBluetoothDevice.name;
+            
+            try {
+                let found = false;
+                
+                if (navigator.bluetooth.getDevices) {
+                    try {
+                        const devices = await navigator.bluetooth.getDevices();
+                        console.log('Found devices:', devices);
+                        
+                        for (const device of devices) {
+                            if (device.name === savedBluetoothDevice.name || device.id === savedBluetoothDevice.id) {
+                                bluetoothDevice = device;
+                                bluetoothDevice.addEventListener('gattserverdisconnected', onDisconnected);
+                                
+                                await connectBluetooth();
+                                reconnectAttempts = 0;
+                                found = true;
+                                return;
+                            }
+                        }
+                    } catch (e) {
+                        console.log('getDevices not supported or failed:', e);
+                    }
+                }
+                
+                if (!found) {
+                    throw new Error('Device not found in paired list');
+                }
+                
+            } catch (error) {
+                console.error('Auto reconnect error:', error);
+                
+                if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+                    setTimeout(autoReconnect, 2000);
+                } else {
+                    showError('自动重连失败，请重新连接蓝牙');
+                    savedBluetoothDevice = null;
+                    localStorage.removeItem('savedBluetoothDevice');
+                    updateSavedDeviceUI();
+                    reconnectAttempts = 0;
+                    
+                    btn.disabled = false;
+                    btn.textContent = '🔵 连接蓝牙';
+                    document.getElementById('btConnectionStatus').textContent = '请点击连接蓝牙';
+                }
+            }
+        }
+
+        function handleBluetoothData(event) {
+            const value = event.target.value;
+            const decoder = new TextDecoder('utf-8');
+            const chunk = decoder.decode(value);
+            
+            dataBuffer += chunk;
+            
+            if (dataBuffer.includes('\n') || dataBuffer.includes('\r')) {
+                const lines = dataBuffer.split(/[\r\n]+/);
+                dataBuffer = lines.pop() || '';
+                
+                lines.forEach(line => {
+                    if (line.trim()) {
+                        parseBluetoothData(line.trim());
+                    }
+                });
+            }
+        }
+
+        function disconnectBluetooth() {
+            if (bluetoothDevice && bluetoothDevice.gatt.connected) {
+                bluetoothDevice.gatt.disconnect();
+            }
+            
+            bluetoothDevice = null;
+            bluetoothCharacteristic = null;
+            isConnected = false;
+            dataBuffer = '';
+            
+            const btn = document.getElementById('bluetoothBtn');
+            const panel = document.getElementById('bluetoothPanel');
+            
+            btn.textContent = '🔵 连接蓝牙';
+            btn.classList.remove('connected');
+            btn.disabled = false;
+            document.getElementById('btConnectionStatus').textContent = '已断开';
+            
+            setStatus(false);
+            startAutoRefresh();
+        }
+
+        function onDisconnected() {
+            isConnected = false;
+            bluetoothCharacteristic = null;
+            dataBuffer = '';
+            
+            const btn = document.getElementById('bluetoothBtn');
+            btn.textContent = '🔵 连接蓝牙';
+            btn.classList.remove('connected');
+            btn.disabled = false;
+            document.getElementById('btConnectionStatus').textContent = '连接已断开';
+            setStatus(false);
+            startAutoRefresh();
+            
+            if (savedBluetoothDevice && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+                console.log('Attempting to reconnect...');
+                setTimeout(autoReconnect, 2000);
+            } else if (savedBluetoothDevice) {
+                showError('蓝牙连接已断开，请手动点击连接');
+            }
+        }
+
+        function startAutoRefresh() {
+            const interval = parseInt(document.getElementById('refreshInterval').value);
+            if (refreshTimer) {
+                clearInterval(refreshTimer);
+                refreshTimer = null;
+            }
+
+            if (interval > 0 && !isAutoRefreshPaused && connectionMode !== 'bluetooth') {
+                refreshTimer = setInterval(fetchOnlineData, interval * 1000);
+            }
+        }
+
+        function toggleAutoRefresh() {
+            const btn = event.target;
+            isAutoRefreshPaused = !isAutoRefreshPaused;
+
+            if (isAutoRefreshPaused) {
+                btn.textContent = '▶️ 继续刷新';
+                if (refreshTimer) {
+                    clearInterval(refreshTimer);
+                    refreshTimer = null;
+                }
+            } else {
+                btn.textContent = '⏸️ 暂停刷新';
+                startAutoRefresh();
+            }
+        }
+
+        document.getElementById('refreshInterval').addEventListener('change', startAutoRefresh);
+
+        window.addEventListener('online', () => {
+            if (connectionMode !== 'bluetooth') {
+                fetchOnlineData();
+            }
+        });
+
+        if ('Notification' in window && Notification.permission === 'default') {
+            Notification.requestPermission();
+        }
+
+        renderAlarms();
+        updateSavedDeviceUI();
+        initChart();
+        
+        if (navigator.onLine) {
+            fetchOnlineData();
+        }
+        startAutoRefresh();
+        
+        if (savedBluetoothDevice) {
+            setTimeout(autoReconnect, 1000);
+        }
+    </script>
+</body>
+</html>
